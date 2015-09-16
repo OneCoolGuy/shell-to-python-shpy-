@@ -42,7 +42,20 @@ sub sprocess{
 	my $line = $_[0];
 	if ($_[0] =~ m/^(ls|pwd|id|date|rm)/){
 		print "$_[1]"; #identation
-		print "$1\n";
+		print "subprocess.call([";
+		$line = $line . " "; # add a white space so my match can get the last word
+		my @words = ( $line =~ m/([^\s]*)/g);
+		my $index = 0;
+		@words = grep { $_ ne '' } @words; #remove any white space from the array
+		while ($index < @words){
+			$word = $words[$index];
+			chomp $word;
+			print " '$word'" if ($word !~ m/^$/);
+			if (++$index < @words){
+				print "," if ($word !~ m/^$/); #print the comma if its not the last word
+			}
+		}
+		print "])\n";
 		return 1;
 	}
 	return 0;
