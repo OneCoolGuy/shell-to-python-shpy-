@@ -4,14 +4,82 @@
 # as a starting point for COMP2041/9041 assignment 
 # http://cgi.cse.unsw.edu.au/~cs2041/assignment/shpy
 
+$line_sep = "!#&@!";
+@program = ();
+
 while ($line = <>) {
     chomp $line;
+	push(@program,$line);
+	
     if ($line =~ /^#!/ && $. == 1) {
         print "#!/usr/bin/python2.7\n";
-    } elsif ($line =~ /echo/) {
-        print "print 'hello world'\n";
-    } else {
-        # Lines we can't translate are turned into comments
-        print "#$line\n";
-    }
+	}
+}
+
+libraryCall(\@program); # to determine what to import
+
+foreach $line (@program){
+	$line =~ s/^(\s*)//;#get the identation of the line and remove it from the line
+	$identation = $1;
+	next if (echo($line, $identation)); #see if it is a echo line
+	next if (variable($line, $identation));
+}
+
+
+sub libraryCall{
+	my $prog = join($line_sep, @{$_[0]});
+	if ($prog =~ m/\Q$line_sep\E\s*(ls|pwd|id|date|rm)/g){
+		print "import subprocess\n";
+	}
+}
+
+sub echo{
+	my $line = $_[0];
+	if ($line =~ m/echo/){
+		print $_[1]; #to print any identation
+		print "print";
+		$line =~ s/^\s*echo\s*//;
+		if ($line =~ m/^[']/){ #single quotes print the whole line
+			print "$line\n";
+		} elsif ( $line =~ m/^["]/ ) {#double quotes print the whole line PS: DEAL WITH VARIABLES 
+			print "$line\n";
+		} else {
+			$line = $line . " "; # add a white space so my match can get the last word
+			my @words = ( $line =~ m/([^\s]*)/g);
+			my $index = 0;
+			@words = grep { $_ ne '' } @words; #remove any white space from the array
+			while ($index < @words){
+				$word = $words[$index];
+				chomp $word;
+				if ($word =~ m/^\$(.*)/){
+					print " $1"; #print the variable withouth quotes
+				} else {
+					print " '$word'" if ($word !~ m/^$/);
+				}
+				if (++$index < @words){
+					print "," if ($word !~ m/^$/); #print the comma if its not the last word
+				}
+			}
+		}
+		print "\n";
+		return 1; #return if found a echo TRUE
+	}
+	return 0; #return false otherwise
+}
+
+sub variable{
+	my $line = $_[0];
+	my $r = 0;
+	print $_[1]; #to print identation
+	if ($line = m/(\w*)=([a-zA-Z]*)/){ #for strings
+		print "$1 = '$2'\n";
+		$r = 1;
+	} elsif ($line = m/(\w*)=([0-9]*)/){ # for numerical values
+		print "$1 = $2\n";
+		$r = 1;
+	} elsif ($line = m/(\w*)=\$(.)/){ # for special variables
+		print "THIS IS A SPECIAL VARIBLE\n";
+		$r = 1;
+	}
+	return $r;	
 }
