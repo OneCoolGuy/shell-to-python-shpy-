@@ -6,6 +6,7 @@
 
 $line_sep = "!#&@!";
 @program = ();
+%libraries;
 
 while ($line = <>) {
     chomp $line;
@@ -23,6 +24,8 @@ foreach $line (@program){
 	$identation = $1;
 	next if (echo($line, $identation)); #see if it is a echo line
 	next if (variable($line, $identation));
+	next if ($libraries{'subprocess'} == 1 && sprocess($line, $identation));
+
 }
 
 
@@ -30,7 +33,19 @@ sub libraryCall{
 	my $prog = join($line_sep, @{$_[0]});
 	if ($prog =~ m/\Q$line_sep\E\s*(ls|pwd|id|date|rm)/g){
 		print "import subprocess\n";
+		$libraries{'subprocess'} = 1; # say that this library was called
 	}
+}
+
+
+sub sprocess{
+	my $line = $_[0];
+	if ($_[0] =~ m/^(ls|pwd|id|date|rm)/){
+		print "$_[1]"; #identation
+		print "$1\n";
+		return 1;
+	}
+	return 0;
 }
 
 sub echo{
@@ -70,14 +85,16 @@ sub echo{
 sub variable{
 	my $line = $_[0];
 	my $r = 0;
-	print $_[1]; #to print identation
 	if ($line = m/(\w*)=([a-zA-Z]*)/){ #for strings
+		print $_[1]; #to print identation
 		print "$1 = '$2'\n";
 		$r = 1;
 	} elsif ($line = m/(\w*)=([0-9]*)/){ # for numerical values
+		print $_[1]; #to print identation
 		print "$1 = $2\n";
 		$r = 1;
 	} elsif ($line = m/(\w*)=\$(.)/){ # for special variables
+		print $_[1]; #to print identation
 		print "THIS IS A SPECIAL VARIBLE\n";
 		$r = 1;
 	}
