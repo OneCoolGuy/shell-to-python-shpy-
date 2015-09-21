@@ -47,7 +47,7 @@ sub libraryCall{
       print "import sys\n";
       $libraries{'sys'} = 1;
    }
-   if ($prog =~ m/\Q$line_sep\E\s*(cd)/g){
+   if ($prog =~ m/\Q$line_sep\E\s*(cd)/g || $prog =~ m/-[drsfwx]/){
       print "import os\n";
       $libraries{'os'} = 1;
    }
@@ -120,27 +120,27 @@ sub echo{
 sub variable{
    my $line = $_[0];
    my $r = 0;
-   if ($line = m/(\w*)=([a-zA-Z]*)/){ #for strings
+   if ($line =~ m/(\w+)=([a-zA-Z]+)/){ #for strings
       print $_[1]; #to print identation
       print "$1 = '$2'\n";
       $r = 1;
-   } elsif ($line = m/(\w*)=([0-9]*)/){ # for numerical values
+   } elsif ($line =~ m/(\w+)=([0-9]+)/){ # for numerical values
       print $_[1]; #to print identation
       print "$1 = $2\n";
       $r = 1;
-   } elsif ($line = m/(\w*)=\$(\d)/){ # for special variables
+   } elsif ($line =~ m/(\w+)=\$([\d])/) { # for special variables
       print $_[1];
-      print "$1 = sys.argv[$2]";
+      print "$1 = sys.argv[$2]\n";
       $r = 1;
-   } elsif ($line = m/(\w*)=\$(.)/){ # for special variables
+   } elsif ($line =~ m/(\w*)=\$(.+)/){ # for special variables
       print $_[1]; #to print identation
-      print "$1 = $2";
+      print "$1 = $2\n";
       $r = 1;
    }
    return $r;	
 }
 
-sub forloops{
+sub forloops{ #ADD seq{..} support
    my $line = $_[0];
    my $loop;
    if ($line =~ m/^for/){
@@ -228,8 +228,11 @@ sub ifelse{
          my $var = $3;  #store var 2 in case it is lost
          print "if $1 ";
          numComparison($2);
-         print " $var:";
-      } elsif (FALSE) { #if for files
+         print " $var:\n";
+      } elsif ($line =~ m/if\s*(?:test|\[)?\s*(-[a-z])\s+([^ ]+)/) { #if for files
+         print "if ";
+         osComparison($1, $2);
+         print ":\n";
       }
       return 1;
    }
@@ -275,3 +278,18 @@ sub numComparison{ # to decide which numerical comparison to use
    }
 }
 
+sub osComparison{# for comparison related to files and directories that need to call the os
+   my $comp = $_[0];
+   my $var = $_[1];
+   if ($comp =~ m/-[rf]/){
+      print "os.access('$var', os.R_OK)";
+   } elsif ( $comp =~ m/-d/){
+      print "os.path.isdir('$var')";
+   } elsif ( $comp =~ m/-s/){
+      print "os.path.getsize('$var') > 0";
+   } elsif ( $comp =~ m/-w/){
+      print "os.access('$var', os.W_OK)";
+   } elsif ( $comp =~ m/-x/){
+      print "os.access('$var', os.X_OK)";
+   }
+}
