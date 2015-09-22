@@ -292,7 +292,14 @@ sub ifelse{
       print $_[1];
       $ifFlag++;
       if ($line =~ m/if\s*(?:test|\[)?\s*([^ ]+)\s+([!=<>]{1,2})\s+([^ ]+)/){
-         print "if '$1' $2 '$3':\n";
+         my $var1 = $1; 
+         my $var2 = $3;
+         my $comp = $2;
+         if ($comp =~ m/^=$/){
+            print "if '$var1' $comp$comp '$var2':\n";
+         } else {
+            print "if '$var1' $comp '$var2':\n";
+         }
       } elsif ($line =~ m/if\s*(?:test|\[)?\s*(?:\$)?([^ ]+)\s+(-[a-z]{2})\s+(?:\$)?([^ ]+)/){
          my $var1 = $1; 
          my $var2 = $3;
