@@ -1,15 +1,15 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -w
 
 # written by andrewt@cse.unsw.edu.au August 2015
 # as a starting point for COMP2041/9041 assignment 
 # http://cgi.cse.unsw.edu.au/~cs2041/assignment/shpy
 
-$whileFLag = 0;
+# $whileFLag = 0;
 $forFlag = 0;
 $ifFlag = 0;
 $line_sep = "!#&@!";
 @program = ();
-%libraries;
+# %libraries;
 
 while ($line = <>) {
    chomp $line;
@@ -22,6 +22,7 @@ while ($line = <>) {
 }
 
 libraryCall(\@program); # to determine what to import
+$comments = "";
 
 foreach $line (@program){
    print "$comments\n" if ($comments !~ m/^\s*$/);
@@ -34,9 +35,9 @@ foreach $line (@program){
    next if ($forFlag > 0 && doOrDone($line, $identation)); # if inside a for loop
    next if (echo($line, $identation)); #see if it is a echo line
    next if (variable($line, $identation));
-   next if ($libraries{'subprocess'} == 1 && sprocess($line, $identation));
-   next if ($libraries{'os'} == 1 && cd($line, $identation));
-   next if ($libraries{'sys'} == 1 && sys($line, $identation));
+   next if (exists $libraries{'subprocess'} && sprocess($line, $identation));
+   next if (exists $libraries{'os'} && cd($line, $identation));
+   next if (exists $libraries{'sys'} && sys($line, $identation));
    next if (forloops($line, $identation)); #see if it is a echo line
    next if (ifelse($line, $identation));
    next if (whileLoop($line, $identation));
