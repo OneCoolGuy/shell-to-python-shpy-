@@ -167,7 +167,7 @@ sub echo{
             my @vars = ($word =~ m/(\$?[^\$ ]+)/g);
             foreach my $var (@vars){
                my $temp = notPrintVariable($var);
-               $temp =~ s/^(sys\..*)/''.join\($1\}/; #case where it's $@
+               $temp =~ s/^(sys\..*)/''.join\($1\)/; #case where it's $@
                $var = quotemeta $var;
                $word =~ s/$var/$temp,/; #change old var for new temp
                $word =~ s/,$//; #remove last ,
@@ -444,9 +444,9 @@ sub osComparison{# for comparison related to files and directories that need to 
    if ($comp =~ m/-[rf]/){
       if ($var =~ m/^\$/){
          $var =~ s/\$//;
-         print "os.access('$var', os.R_OK)";
-      } else {
          print "os.access($var, os.R_OK)";
+      } else {
+         print "os.access('$var', os.R_OK)";
       }
    } elsif ( $comp =~ m/-d/){
       if ($var =~ m/^\$/){
