@@ -4,8 +4,7 @@
 # as a starting point for COMP2041/9041 assignment 
 # http://cgi.cse.unsw.edu.au/~cs2041/assignment/shpy
 
-# $whileFLag = 0;
-$forFlag = 0;
+@whileAndForStack = ();
 $ifFlag = 0;
 $line_sep = "!#&@!";
 @program = ();
@@ -28,17 +27,18 @@ foreach $line (@program){
    print "$comments\n" if ($comments !~ m/^\s*$/);
    $comments = "";
    $line =~ s/^(\s*)//;#get the identation of the line and remove it from the line
-   $identation = $1;
-   $line =~ s/[^\$](#[^"']+)$//;
-   $comments = $1;
+   $identation = '   ' x ($ifFlag + scalar @whileAndForStack);
+   if ($line =~ s/[^\$](#[^"']+)$//){
+      $comments = $1;
+   }
    next if ($ifFlag > 0 && thenElseElifFi($line, $identation)); # for when inside a if loop
-   next if ($forFlag > 0 && doOrDone($line, $identation)); # if inside a for loop
+   next if (scalar @whileAndForStack > 0 && doOrDone($line, $identation)); # if inside a for loop
    next if (echo($line, $identation)); #see if it is a echo line
    next if (variable($line, $identation));
    next if (exists $libraries{'subprocess'} && sprocess($line, $identation));
    next if (exists $libraries{'os'} && cd($line, $identation));
    next if (exists $libraries{'sys'} && sys($line, $identation));
-   next if (forloops($line, $identation)); #see if it is a echo line
+   next if (forloops($line, $identation)); 
    next if (ifelse($line, $identation));
    next if (whileLoop($line, $identation));
    if ($line =~ m/^#/){
@@ -162,8 +162,8 @@ sub forloops{ #ADD seq{..} support
    my $line = $_[0];
    my $loop;
    if ($line =~ m/^for/){
-      print $_[1]; #print identation
-      $forFlag++;
+      print $_[1];
+      unshift(@whileAndForStack, 'for');
       my $variable = ($line =~ m/for\s+([^ ]+)/g)[0];
       if ($line =~ m/in\s*(.*[\/\*\?\[\]].*)\s*/g){
          $loop = "sorted(glob.glob(\"$1\"))";
@@ -214,10 +214,8 @@ sub forloops{ #ADD seq{..} support
 sub whileLoop{
    my $line =$_[0];
    if ($line =~ m/^while/){
-      # print "AQUI$_[1]LOL\n";
       print $_[1];
-      # $whileFLag++; #increment while Flag
-      $forFlag++;
+      unshift(@whileAndForStack, 'while'); # keep count of while and for 
       if ($line =~ m/while\s*(?:test|\[)?\s*([^ ]+)\s+([!=<>]{1,2})\s+([^ ]+)/){
          print "while '$1' $2 '$3':\n";
       } elsif ($line =~ m/while\s*(?:test|\[)?\s*(?:\$)?([^ ]+)\s+(-[a-z]{2})\s+(?:\$)?([^ ]+)/){
@@ -254,7 +252,7 @@ sub doOrDone{ # for do or done in and while for loops
    if ($line =~ m/^do\s*/g){
       return 1;
    } elsif ($line =~ m/^done\s*/g){
-      $forFlag--;
+      shift(@whileAndForStack);
       return 1;
    }
    return 0;
@@ -321,19 +319,22 @@ sub ifelse{
 
 sub thenElseElifFi{
    my $line = $_[0];
+   $ident = $_[1];
+   $ident =~ s/ {3}$//; # remove one level of identation 
    if ($line =~ m/^then\s*$/){
       return 1;
    } elsif ($line =~ m/^el(if.*)/){
-      print $_[1];
+      print $ident;
       print "el";
-      ifelse($1,'');
+      $ifFlag--;
+      ifelse($1,''); # call if function with el in the begginning and with no identation
       return 1;
    } elsif ($line =~ m/^else\s*/){
-      print $_[1];
+      print $ident;
       print "else:\n";
       return 1;
    } elsif ($line =~ m/^fi/){
-      print $_[1];
+      print $ident;
       $ifFlag--;
       return 1;
    }
