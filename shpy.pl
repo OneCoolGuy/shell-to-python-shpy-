@@ -53,7 +53,7 @@ foreach $line (@program){
 
 sub libraryCall{
    my $prog = join($line_sep, @{$_[0]});
-   if ($prog =~ m/\Q$line_sep\E\s*(ls|pwd|id|date|rm)/g){
+   if ($prog =~ m/\Q$line_sep\E\s*(ls|pwd|id|date|rm)/g || $prog =~ m/`(ls|pwd|id|date|rm)/g){ # or in the begining or as after `
       print "import subprocess\n";
       $libraries{'subprocess'} = 1; # say that this library was called
    }
@@ -104,6 +104,36 @@ sub sprocess{
    return 0;
 }
 
+sub sprocessNoLine{ #same as above but withouth new line
+   my $line = $_[0];
+   if ($_[0] =~ m/^(ls|pwd|id|date|rm)/){
+      print "subprocess.call([";
+      $line = $line . " "; # add a white space so my match can get the last word
+      my @words = ( $line =~ m/([^\s]*)/g);
+      my $index = 0;
+      @words = grep { $_ ne '' } @words; #remove any white space from the array
+      while ($index < @words){
+         $word = $words[$index];
+         chomp $word;
+         $word = notPrintVariable($word);
+         if ($word =~ m/sys\./){
+            print "] + $word";
+            $index++;
+         } else {
+            if ($index++ > 0 && $index < @words){
+               print "," if ($word !~ m/^$/); #print the comma if its not the last word
+            }
+            print " $word";
+            if ($index >= @words){
+               print "]";
+            }
+         }
+      }
+      return 1;
+   }
+   return 0;
+}
+
 sub echo{
    my $line = $_[0];
    if ($line =~ m/echo/){
@@ -116,10 +146,11 @@ sub echo{
          my @vars = ($line =~ m/(\$[^ ]+)/g);
          foreach my $var (@vars){
             my $temp = notPrintVariable($var);
+            $temp =~ s/^(sys\..*)/' '.join\($1\)/; #case where it's $@
             $var = quotemeta $var;
             $line =~ s/$var/",$temp,"/;
          }
-         $line =~ s/,"$//;
+         $line =~ s/"?,"$//;
          $line =~ s/ "/"/g;
          $line =~ s/" /"/g;
          $line =~ s/"",//g;
@@ -136,6 +167,7 @@ sub echo{
             my @vars = ($word =~ m/(\$?[^\$ ]+)/g);
             foreach my $var (@vars){
                my $temp = notPrintVariable($var);
+               $temp =~ s/^(sys\..*)/''.join\($1\}/; #case where it's $@
                $var = quotemeta $var;
                $word =~ s/$var/$temp,/; #change old var for new temp
                $word =~ s/,$//; #remove last ,
@@ -163,6 +195,15 @@ sub variable{
       print $_[1]; #to print identation
       print "$1 = ".dealingWithExpr($2)."\n";
       $r = 1;
+   } elsif ($line =~ m/(\w+)=(`.*)/){
+      print $_[1];
+      print "$1 = ";
+      my @procall = $line =~ m/`(.*)`/g;
+      foreach $proc (@procall){
+         sprocessNoLine($proc);
+      }
+      print ")\n"; 
+      $r = 1;
    } elsif ($line =~ m/(\w+)=([0-9]+)/){ # for numerical values
       print $_[1]; #to print identation
       print "$1 = $2\n";
@@ -174,8 +215,13 @@ sub variable{
    } elsif ($line =~ m/(\w+)=(\$[\*#@])/){ # for special variables
       print $_[1]; #to print identation
       my $name = $1;
-      $var = notPrintVariable($2);
-      print "$1 = $var\n";
+      my $var = $2;
+      if ($line =~ m/@/){
+         $var = "sys.argv[1:]";
+      } else {
+         $var = notPrintVariable($var);
+      }
+      print "$name = $var\n";
       $r = 1;
    } elsif ($line =~ m/(\w+)=\$([^ ]+)/){
       print $_[1]; #to print identation
@@ -215,6 +261,10 @@ sub forloops{ #ADD seq{..} support
             $loop = "in range (int($var1), int($var2 + 1))";
          }
          print "for $variable $loop";
+      } elsif ($line =~ m/in\s*`(.*)`/g) {
+         print "for $variable in ";
+         sprocessNoLine($1);
+         print ")";
       } elsif ($line =~ m/in\s*(.*)/g) {
          my @words = split(' ', $1);
          print "for $variable in ";
@@ -224,13 +274,6 @@ sub forloops{ #ADD seq{..} support
             chomp $word;
             $word = notPrintVariable($word);
             print $word;
-            # if ($word =~ m/\d+/){
-            #    print " $word"; #print the variable withouth quotes
-            # if ($word =~ m/$(.)/{
-            #
-            # } else {
-            #    print " '$word'";
-            # }
             if (++$index < @words){
                print "," if ($word !~ m/^$/); #print the comma if its not the last word
             }
@@ -278,11 +321,11 @@ sub whileLoop{
 
 
 
-sub doOrDone{ # for do or done in and while for loops
+sub doOrDone{ # for do or done in while and for loops
    my $line = $_[0];
-   if ($line =~ m/^do\s*/g){
+   if ($line =~ m/^do\s*$/g){
       return 1;
-   } elsif ($line =~ m/^done\s*/g){
+   } elsif ($line =~ m/^done\s*$/g){
       shift(@whileAndForStack);
       return 1;
    }
@@ -320,16 +363,18 @@ sub ifelse{
    if ($line =~ m/^if\s*/){
       print $_[1];
       $ifFlag++;
-      if ($line =~ m/if\s*(?:test|\[)?\s*([^ ]+)\s+([!=<>]{1,2})\s+([^ ]+)/){
+      if ($line =~ m/if\s*(?:test|\[)?\s*"?([^ ]+)"?\s+([!=<>]{1,2})\s+"?([^ ]+)"?/){ #not numeric
          my $var1 = $1; 
          my $var2 = $3;
          my $comp = $2;
+         $var1 = notPrintVariable($var1);
+         $var2 = notPrintVariable($var2);
          if ($comp =~ m/^=$/){
-            print "if '$var1' $comp$comp '$var2':\n";
+            print "if $var1 $comp$comp $var2:\n";
          } else {
-            print "if '$var1' $comp '$var2':\n";
+            print "if $var1 $comp $var2:\n";
          }
-      } elsif ($line =~ m/if\s*(?:test|\[)?\s*(?:\$)?([^ ]+)\s+(-[a-z]{2})\s+(?:\$)?([^ ]+)/){
+      } elsif ($line =~ m/if\s*(?:test|\[)?\s*(?:\$)?([^ ]+)\s+(-[a-z]{2})\s+(?:\$)?([^ ]+)/){ #numeric
          my $var1 = $1; 
          my $var2 = $3;
          my $comp = $2;
@@ -352,11 +397,13 @@ sub thenElseElifFi{
    my $line = $_[0];
    $ident = $_[1];
    $ident =~ s/ {3}$//; # remove one level of identation 
+   # print "\n";
    if ($line =~ m/^then\s*$/){
       return 1;
    } elsif ($line =~ m/^el(if.*)/){
       print $ident;
       print "el";
+      # print "AQUI $ifFlag LOl\n";
       $ifFlag--;
       ifelse($1,''); # call if function with el in the begginning and with no identation
       return 1;
@@ -365,7 +412,6 @@ sub thenElseElifFi{
       print "else:\n";
       return 1;
    } elsif ($line =~ m/^fi/){
-      print $ident;
       $ifFlag--;
       return 1;
    }
@@ -396,15 +442,40 @@ sub osComparison{# for comparison related to files and directories that need to 
    my $comp = $_[0];
    my $var = $_[1];
    if ($comp =~ m/-[rf]/){
-      print "os.access('$var', os.R_OK)";
+      if ($var =~ m/^\$/){
+         $var =~ s/\$//;
+         print "os.access('$var', os.R_OK)";
+      } else {
+         print "os.access($var, os.R_OK)";
+      }
    } elsif ( $comp =~ m/-d/){
-      print "os.path.isdir('$var')";
+      if ($var =~ m/^\$/){
+         $var =~ s/\$//;
+         print "os.path.isdir($var)";
+      }else{
+         print "os.path.isdir('$var')";
+      }
    } elsif ( $comp =~ m/-s/){
-      print "os.path.getsize('$var') > 0";
+      if ($var =~ m/^\$/){
+         $var =~ s/\$//;
+         print "os.path.getsize($var) > 0";
+      } else {
+         print "os.path.getsize('$var') > 0";
+      }
    } elsif ( $comp =~ m/-w/){
-      print "os.access('$var', os.W_OK)";
+      if ($var =~ m/^\$/){
+         $var =~ s/\$//;
+         print "os.access($var, os.W_OK)";
+      } else {
+         print "os.access('$var', os.W_OK)";
+      }
    } elsif ( $comp =~ m/-x/){
-      print "os.access('$var', os.X_OK)";
+      if ($var =~ m/^\$/){
+         $var =~ s/\$//;
+         print "os.access($var, os.X_OK)";
+      } else {
+         print "os.access('$var', os.X_OK)";
+      }
    }
 }
 
@@ -419,7 +490,7 @@ sub notPrintVariable{ # NOT PRINTING VARIABLE USED TO DISCOVER WHAT VARIABLE IT 
       $var = "sys.argv[$1]";
    } elsif ($line =~ m/^["]?\$([@#\*])["]?/){ # for special variables
       my $temp = $1;
-      $var = "' '.join(sys.argv[1:])" if ($temp =~ m/@/);
+      $var = "sys.argv[1:]" if ($temp =~ m/@/);
       $var = "len(sys.argv[1:])" if $temp =~ m/#/;
       $var = "' '.join(sys.argv[1:])" if $temp =~ m/\*/;
    } elsif ($line =~ m/^["]?\$(.+)["]?/){
@@ -439,7 +510,6 @@ sub dealingWithExpr{
       } elsif ($word =~ m/([\*+-\\\|\&\<\=\%])/){
          $expr = $expr." ".$1;
       } else {
-         print "LOL $word LOL \n" if ($word =~ m/\*/);
          $expr = $expr." int(".notPrintVariable($word).")";
       }
    }
