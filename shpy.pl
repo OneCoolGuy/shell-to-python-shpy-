@@ -57,7 +57,7 @@ sub libraryCall{
       print "import subprocess\n";
       $libraries{'subprocess'} = 1; # say that this library was called
    }
-   if ($prog =~ m/\Q$line_sep\E\s*(read|exit)/g || $prog =~ m/\$[\d]/g){
+   if ($prog =~ m/\Q$line_sep\E\s*(read|exit)/g || $prog =~ m/\$[\d\@\#\*]/g){
       print "import sys\n";
       $libraries{'sys'} = 1;
    }
@@ -84,12 +84,21 @@ sub sprocess{
       while ($index < @words){
          $word = $words[$index];
          chomp $word;
-         print " '$word'" if ($word !~ m/^$/);
-         if (++$index < @words){
-            print "," if ($word !~ m/^$/); #print the comma if its not the last word
+         $word = notPrintVariable($word);
+         if ($word =~ m/sys\./){
+            print "] + $word";
+            $index++;
+         } else {
+            if ($index++ > 0 && $index < @words){
+               print "," if ($word !~ m/^$/); #print the comma if its not the last word
+            }
+            print " $word";
+            if ($index >= @words){
+               print "]";
+            }
          }
       }
-      print "])\n";
+      print ")\n";
       return 1;
    }
    return 0;
@@ -104,6 +113,17 @@ sub echo{
       if ($line =~ m/^[']/){ #single quotes print the whole line
          print " $line\n";
       } elsif ( $line =~ m/^["]/ ) {#double quotes print the whole line PS: DEAL WITH VARIABLES 
+         my @vars = ($line =~ m/(\$[^ ]+)/g);
+         foreach my $var (@vars){
+            my $temp = notPrintVariable($var);
+            $var = quotemeta $var;
+            $line =~ s/$var/",''.join($temp),"/ if $temp =~ m/^sys.argv/;
+            $line =~ s/$var/",$temp,"/;
+         }
+         $line =~ s/,"$//;
+         $line =~ s/ "/"/g;
+         $line =~ s/" /"/g;
+         $line =~ s/"",//g;
          print " $line\n";
       } else {
          $line = $line . " "; # add a white space so my match can get the last word
@@ -113,16 +133,26 @@ sub echo{
          while ($index < @words){
             $word = $words[$index];
             chomp $word;
-            if ($word =~ m/^\$(\d)/) {
-               print " sys.argv[$1]";
-            } elsif ($word =~ m/^\$(.*)/){
-               print " $1"; #print the variable withouth quotes
-            } else {
-               print " '$word'" if ($word !~ m/^$/);
+            # print "WORD $word WORD\n";
+            my @vars = ($word =~ m/(\$?[^\$ ]+)/g);
+            foreach my $var (@vars){
+               my $temp = notPrintVariable($var);
+               $var = quotemeta $var;
+               $word =~ s/$var/',''.join($temp),'/ if $temp =~ m/^sys.argv/;
+               $word =~ s/$var/$temp,/;
+               $word =~ s/,$//;
             }
+            print " $word";
             if (++$index < @words){
                print "," if ($word !~ m/^$/); #print the comma if its not the last word
             }
+            # if ($word =~ m/^\$(\d)/) {
+            #    print " sys.argv[$1]";
+            # } elsif ($word =~ m/^\$(.*)/){
+            #    print " $1"; #print the variable withouth quotes
+            # } else {
+            #    print " '$word'" if ($word !~ m/^$/);
+            # }
          }
       print "\n";
       }
@@ -150,7 +180,13 @@ sub variable{
       print $_[1];
       print "$1 = sys.argv[$2]\n";
       $r = 1;
-   } elsif ($line =~ m/(\w*)=\$(.+)/){ # for special variables
+   } elsif ($line =~ m/(\w+)=(\$[\*#@])/){ # for special variables
+      print $_[1]; #to print identation
+      my $name = $1;
+      $var = notPrintVariable($2);
+      print "$1 = $var\n";
+      $r = 1;
+   } elsif ($line =~ m/(\w+)=\$([^ ]+)/){
       print $_[1]; #to print identation
       print "$1 = $2\n";
       $r = 1;
@@ -178,7 +214,7 @@ sub forloops{ #ADD seq{..} support
             $loop = "in range ($var1, ". ($var2 + 1) .")";
          }
          print "for $variable $loop";
-      } elsif ($line =~ m/in\s*\$\(seq\s*(\$[^ ]*|\d+)\s*(\$[^ ]*|\d+).*/g) { #for loops using {1..10} syntax
+      } elsif ($line =~ m/in\s*\$\(seq\s*(\$[^ ]*|\d+)\s*(\$[^ ]*|\d+).*/g) { #for loops using seq{1..10} syntax
          my $var1 = notPrintVariable($1);
          my $var2 = notPrintVariable($2);
          if ($line =~ m/seq\s+(\$[^ ]*|\d+)\s*(\$[^ ]*|\d+)\s*(\$[^ ]*|\d+)/g){
@@ -195,11 +231,15 @@ sub forloops{ #ADD seq{..} support
          while ($index < @words){
             my $word = $words[$index];
             chomp $word;
-            if ($word =~ m/\d+/){
-               print " $word"; #print the variable withouth quotes
-            } else {
-               print " '$word'";
-            }
+            $word = notPrintVariable($word);
+            print $word;
+            # if ($word =~ m/\d+/){
+            #    print " $word"; #print the variable withouth quotes
+            # if ($word =~ m/$(.)/{
+            #
+            # } else {
+            #    print " '$word'";
+            # }
             if (++$index < @words){
                print "," if ($word !~ m/^$/); #print the comma if its not the last word
             }
@@ -376,20 +416,27 @@ sub osComparison{# for comparison related to files and directories that need to 
       print "os.access('$var', os.X_OK)";
    }
 }
+
 sub notPrintVariable{ # NOT PRINTING VARIABLE USED TO DISCOVER WHAT VARIABLE IT IS
    my $line = $_[0];
    my $var = $line;
-   if ($line =~ m/^([a-zA-Z]+)$/){ #for strings
+   if ($line =~ m/^([^\$|\d]+)$/){ #for strings
       $var = "'$1'";
    } elsif ($line =~ m/^([0-9]+)$/){ # for numerical values
       $var = $1;
-   } elsif ($line =~ m/^\$(\d)/) { # for special variables
+   } elsif ($line =~ m/^"?\$(\d)"?/) { # for special variables
       $var = "sys.argv[$1]";
-   } elsif ($line =~ m/^\$(.+)$/){ # for special variables
-      $var = $1;
+   } elsif ($line =~ m/^["]?\$([@#\*])["]?/){ # for special variables
+      my $temp = $1;
+      $var = "' '.join(sys.argv[1:])" if ($temp =~ m/@/);
+      $var = "len(sys.argv[1:])" if $temp =~ m/#/;
+      $var = "' '.join(sys.argv[1:])" if $temp =~ m/\*/;
+   } elsif ($line =~ m/^["]?\$(.+)["]?/){
+      $var = "$1";
    }
    return $var;	
 }
+
 sub dealingWithExpr{
    my $line = $_[0];
    $line =~ s/(`)//g;
