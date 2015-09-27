@@ -20,7 +20,9 @@ while ($line = <>) {
    }
 }
 
+unshift(@program, $line_sep);
 libraryCall(\@program); # to determine what to import
+shift(@program);
 $comments = "";
 
 foreach $line (@program){
@@ -53,15 +55,16 @@ foreach $line (@program){
 
 sub libraryCall{
    my $prog = join($line_sep, @{$_[0]});
+   
    if ($prog =~ m/\Q$line_sep\E\s*(ls|pwd|id|date|rm)/g || $prog =~ m/`(ls|pwd|id|date|rm)/g){ # or in the begining or as after `
       print "import subprocess\n";
       $libraries{'subprocess'} = 1; # say that this library was called
    }
-   if ($prog =~ m/\Q$line_sep\E\s*(read|exit)/g || $prog =~ m/\$[\d\@\#\*]/g){
+   if ($prog =~ m/\Q$line_sep\E\s*(read|exit|-n)/g || $prog =~ m/\$[\d\@\#\*]/g){
       print "import sys\n";
       $libraries{'sys'} = 1;
    }
-   if ($prog =~ m/\Q$line_sep\E\s*(cd)/g || $prog =~ m/-[drsfwx]/){
+   if ($prog =~ m/\Q$line_sep\Ecd/g || $prog =~ m/-[drsfwx]/){
       print "import os\n";
       $libraries{'os'} = 1;
    }
@@ -120,7 +123,7 @@ sub sprocessNoLine{ #same as above but withouth new line
             print "] + $word";
             $index++;
          } else {
-            if ($index++ > 0 && $index < @words){
+            if ($index++ > 0 && $index <= @words){
                print "," if ($word !~ m/^$/); #print the comma if its not the last word
             }
             print " $word";
@@ -136,12 +139,21 @@ sub sprocessNoLine{ #same as above but withouth new line
 
 sub echo{
    my $line = $_[0];
+   my $noNewLines = 0;
+   if ($line =~ m/echo\s+\-n/){
+      $noNewLines = 1;
+      $line =~ s/\-n//;
+   }
    if ($line =~ m/echo/){
       print $_[1]; #to print any identation
-      print "print";
+      if ($noNewLines == 0){
+         print "print";
+      } else {
+         print "sys.stdout.write(";
+      }
       $line =~ s/^\s*echo\s*//;
       if ($line =~ m/^[']/){ #single quotes print the whole line
-         print " $line\n";
+         print " $line";
       } elsif ( $line =~ m/^["]/ ) {#double quotes print the whole line PS: DEAL WITH VARIABLES 
          my @vars = ($line =~ m/(\$[^ ]+)/g);
          foreach my $var (@vars){
@@ -154,7 +166,7 @@ sub echo{
          $line =~ s/ "/"/g;
          $line =~ s/" /"/g;
          $line =~ s/"",//g;
-         print " $line\n";
+         print " $line";
       } else {
          $line = $line . " "; # add a white space so my match can get the last word
          my @words = ( $line =~ m/([^\s]*)/g);
@@ -177,7 +189,11 @@ sub echo{
                print "," if ($word !~ m/^$/); #print the comma if its not the last word
             }
          }
-      print "\n";
+      }
+      if ($noNewLines == 0){
+         print "\n";
+      } else {
+         print ")\n";
       }
       return 1; #return if found a echo TRUE
    }
@@ -291,10 +307,17 @@ sub whileLoop{
       print $_[1];
       unshift(@whileAndForStack, 'while'); # keep count of while and for 
       if ($line =~ m/while\s*(?:test|\[)?\s*([^ ]+)\s+([!=<>]{1,2})\s+([^ ]+)/){
-         print "while '$1' $2 '$3':\n";
-      } elsif ($line =~ m/while\s*(?:test|\[)?\s*(?:\$)?([^ ]+)\s+(-[a-z]{2})\s+(?:\$)?([^ ]+)/){
          my $var1 = $1; 
          my $var2 = $3;
+         $var1 = notPrintVariable($var1); 
+         $var2 = notPrintVariable($var2);
+         my $comp = $2;
+         print "while $var1 $comp $var2:\n";
+      } elsif ($line =~ m/while\s*(?:test|\[)?\s*(\$?[^ ]+)\s+(-[a-z]{2})\s+(\$?[^ ]+)/){
+         my $var1 = $1; 
+         my $var2 = $3;
+         $var1 = notPrintVariable($var1); 
+         $var2 = notPrintVariable($var2);
          my $comp = $2;
          print "while int($var1) ";
          numComparison($comp);
@@ -374,10 +397,12 @@ sub ifelse{
          } else {
             print "if $var1 $comp $var2:\n";
          }
-      } elsif ($line =~ m/if\s*(?:test|\[)?\s*(?:\$)?([^ ]+)\s+(-[a-z]{2})\s+(?:\$)?([^ ]+)/){ #numeric
+      } elsif ($line =~ m/if\s*(?:test|\[)?\s*(\$?[^ ]+)\s+(-[a-z]{2})\s+(\$?[^\] ]+)/){ #numeric
          my $var1 = $1; 
          my $var2 = $3;
          my $comp = $2;
+         $var1 = notPrintVariable($var1);
+         $var2 = notPrintVariable($var2);
          print "if int($var1) ";
          numComparison($comp);
          print " int($var2):\n";
@@ -482,7 +507,7 @@ sub osComparison{# for comparison related to files and directories that need to 
 sub notPrintVariable{ # NOT PRINTING VARIABLE USED TO DISCOVER WHAT VARIABLE IT IS
    my $line = $_[0];
    my $var = $line;
-   if ($line =~ m/^([^\$|\d]+)$/){ #for strings
+   if ($line =~ m/^([^\$|\d|'|"]+)$/){ #for strings
       $var = "'$1'";
    } elsif ($line =~ m/^([0-9]+)$/){ # for numerical values
       $var = $1;
@@ -494,6 +519,8 @@ sub notPrintVariable{ # NOT PRINTING VARIABLE USED TO DISCOVER WHAT VARIABLE IT 
       $var = "len(sys.argv[1:])" if $temp =~ m/#/;
       $var = "' '.join(sys.argv[1:])" if $temp =~ m/\*/;
    } elsif ($line =~ m/^["]?\$(.+)["]?/){
+      $var = "$1";
+   } elsif ($line =~ m/^('.+')/){
       $var = "$1";
    }
    return $var;	
@@ -507,7 +534,7 @@ sub dealingWithExpr{
    foreach my $word (@words){
       if ($word =~ m/^\s*$/){
          next;
-      } elsif ($word =~ m/([\*+-\\\|\&\<\=\%])/){
+      } elsif ($word =~ m/([\*\+\-\/\|\&\<\=\%])/){
          $expr = $expr." ".$1;
       } else {
          $expr = $expr." int(".notPrintVariable($word).")";
