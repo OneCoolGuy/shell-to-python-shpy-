@@ -117,7 +117,6 @@ sub echo{
          foreach my $var (@vars){
             my $temp = notPrintVariable($var);
             $var = quotemeta $var;
-            $line =~ s/$var/",''.join($temp),"/ if $temp =~ m/^sys.argv/;
             $line =~ s/$var/",$temp,"/;
          }
          $line =~ s/,"$//;
@@ -138,21 +137,13 @@ sub echo{
             foreach my $var (@vars){
                my $temp = notPrintVariable($var);
                $var = quotemeta $var;
-               $word =~ s/$var/',''.join($temp),'/ if $temp =~ m/^sys.argv/;
-               $word =~ s/$var/$temp,/;
-               $word =~ s/,$//;
+               $word =~ s/$var/$temp,/; #change old var for new temp
+               $word =~ s/,$//; #remove last ,
             }
             print " $word";
             if (++$index < @words){
                print "," if ($word !~ m/^$/); #print the comma if its not the last word
             }
-            # if ($word =~ m/^\$(\d)/) {
-            #    print " sys.argv[$1]";
-            # } elsif ($word =~ m/^\$(.*)/){
-            #    print " $1"; #print the variable withouth quotes
-            # } else {
-            #    print " '$word'" if ($word !~ m/^$/);
-            # }
          }
       print "\n";
       }
