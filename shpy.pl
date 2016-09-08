@@ -1,11 +1,11 @@
 #!/usr/bin/perl -w
 
-# written by andrewt@cse.unsw.edu.au August 2015
-# as a starting point for COMP2041/9041 assignment 
+# written by Lucas Germano da Silva August 2015
+# as a COMP2041/9041 assignment 
 # http://cgi.cse.unsw.edu.au/~cs2041/assignment/shpy
 
-@whileAndForStack = ();
-$ifFlag = 0;
+@whileAndForStack = (); # stack that keeps count of whiles and fors
+$ifFlag = 0;  #
 $line_sep = "!#&@!";
 @program = ();
 # %libraries;
