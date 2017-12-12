@@ -7,7 +7,7 @@ It's a basic converter from shell to python that I did for a class while I was s
 
 It receives a shell script and outputs a python script that tries to emulate the same behauvior.
 
-NOTE: It is far from perfect, and even some of the demoScripts don't work as intended, but it was a great learning project.
+NOTE: It is far from perfect, but it was challenging and a great learning project.
 It helped me to learn Shell, Python, Perl and regular expressions.
 
 Examples:
